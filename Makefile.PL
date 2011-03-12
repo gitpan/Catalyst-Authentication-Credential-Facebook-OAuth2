@@ -24,13 +24,14 @@ my %WriteMakefileArgs = (
   'LICENSE' => 'perl',
   'NAME' => 'Catalyst::Authentication::Credential::Facebook::OAuth2',
   'PREREQ_PM' => {
+    'Facebook::Graph' => '0',
     'Moose' => '0',
     'MooseX::Types::Common::String' => '0',
     'MooseX::Types::Moose' => '0',
     'aliased' => '0',
     'namespace::autoclean' => '0'
   },
-  'VERSION' => '0.01',
+  'VERSION' => '0.02',
   'test' => {
     'TESTS' => 't/*.t'
   }

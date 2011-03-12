@@ -3,14 +3,14 @@ BEGIN {
   $Catalyst::Authentication::Credential::Facebook::OAuth2::AUTHORITY = 'cpan:FLORA';
 }
 BEGIN {
-  $Catalyst::Authentication::Credential::Facebook::OAuth2::VERSION = '0.01';
+  $Catalyst::Authentication::Credential::Facebook::OAuth2::VERSION = '0.02';
 }
 # ABSTRACT: Authenticate your Catalyst application's users using Facebook's OAuth 2.0
 
 use Moose;
 use MooseX::Types::Moose qw(ArrayRef);
 use MooseX::Types::Common::String qw(NonEmptySimpleStr);
-use aliased 'Net::Facebook::Oauth2', 'OAuth';
+use aliased 'Facebook::Graph', 'FB';
 use namespace::autoclean;
 
 
@@ -27,22 +27,14 @@ has oauth_args => (
     default => sub { [] },
 );
 
-has _oauth => (
-    is      => 'ro',
-    isa     => OAuth,
-    lazy    => 1,
-    builder => '_build__oauth',
-    handles => {
-        (map { ("_${_}" => $_) } qw(get_authorization_url get_access_token)),
-    },
-);
+sub _build_oauth {
+    my ($self, @args) = @_;
 
-sub _build__oauth {
-    my ($self) = @_;
-
-    return OAuth->new(
-        (map { ($_ => $self->$_) } qw(application_id application_secret)),
+    return FB->new(
+        app_id => $self->application_id,
+        secret => $self->application_secret,
         @{ $self->oauth_args },
+        @args,
     );
 }
 
@@ -52,29 +44,28 @@ sub BUILDARGS {
     return $config;
 }
 
-sub BUILD {
-    my ($self) = @_;
-
-    $self->_oauth;
-}
-
 
 sub authenticate {
     my ($self, $ctx, $realm, $auth_info) = @_;
 
+    my $callback_uri = $ctx->request->uri->clone;
+    $callback_uri->query(undef);
+
+    my $oauth = $self->_build_oauth(
+        postback => $callback_uri,
+    );
+
     unless (defined(my $code = $ctx->request->params->{code})) {
-        my $auth_url = $self->_get_authorization_url(
-            callback => $ctx->request->uri,
-            display  => 'page',
-            %{ $auth_info },
-        );
+        my $auth_url = $oauth->authorize
+            ->extend_permissions(@{ $auth_info->{scope} })
+            ->uri_as_string;
 
         $ctx->response->redirect($auth_url);
 
         return;
     }
     else {
-        my $token = $self->_get_access_token(code => $code);
+        my $token = $oauth->request_access_token($code)->token;
         die 'Error validating verification code' unless $token;
 
         return $realm->find_user({
@@ -154,7 +145,7 @@ L<http://www.facebook.com/developers/>.
 
 =head2 oauth_args
 
-An array reference of additional options to pass to L<Net::Facebook::Oauth2>'s
+An array reference of additional options to pass to L<Facebook::Graph>'s
 constructor.
 
 =head1 METHODS
@@ -197,14 +188,17 @@ granted you access.
 
 If access token retrieval fails, an exception will be thrown.
 
-The auth info hash reference passed as the first argument to C<authenticate>
-will be passed along to C<Net::Facebook::Oauth2>'s C<get_authorization_url>
-method. Please refer to L<Net::Facebook::Oauth2> for details.
+The C<scope> key in the auth info hash reference passed as the first argument to
+C<authenticate> will be passed along to C<Facebook::Graph::Authorize>'s
+C<extend_permissions> method.
 
 =head1 ACKNOWLEDGEMENTS
 
 Thanks L<Reask Limited|http://reask.com/> for funding the development of this
 module.
+
+Thanks L<Shutterstock|http://shutterstock.com/> for funding bugfixing of and
+enhancements to this module.
 
 =for Pod::Coverage   BUILD
 
@@ -214,7 +208,7 @@ Florian Ragwitz <rafl@debian.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2010 by Florian Ragwitz, Reask Limited.
+This software is copyright (c) 2011 by Florian Ragwitz, Reask Limited.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
